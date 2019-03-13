@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
+# TODO :
+# - COMPUTE DT
+
+import sys
+import re
+import os, errno
+import argparse
+import codecs
+
+
+# List of characters to ignore, comment as you wish ; by default we keep space and newlines
+# See source of corpux-keylogger for details
+
+badchars = []
+
+## From Unicode Control Pictures, U2400-243F
+badchars.append(u'\u2408') # VISUAL_BACKSPC
+badchars.append(u'\u241a') # VISUAL_INSERT
+badchars.append(u'\u241b') # VISUAL_ESCAPE
+badchars.append(u'\u2421') # VISUAL_DELETE
+#badchars.append(u'\u2423') # VISUAL_SPACE
+#badchars.append(u'\u2424') # VISUAL_ENTER
+
+## From Unicode Arrows, U2190-21FF
+badchars.append(u'\u2190') # VISUAL_LEFT
+badchars.append(u'\u2191') # VISUAL_UP
+badchars.append(u'\u2192') # VISUAL_RIGHT
+badchars.append(u'\u2193') # VISUAL_DOWN
+badchars.append(u'\u21de') # VISUAL_PUP
+badchars.append(u'\u21df') # VISUAL_PDOWN
+badchars.append(u'\u21e5') # VISUAL_TAB
+badchars.append(u'\u21f1') # VISUAL_HOME
+badchars.append(u'\u21f2') # VISUAL_END
+
+
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc: # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else: raise
+
+
+def main(argv):
+
+	parser = argparse.ArgumentParser(description='Create corpus of characters use from corpux-keylogger output.')
+	parser.add_argument(dest='inputfiles', metavar='infile', type=str, nargs='+', help='list of files to be analyzed')
+	parser.add_argument('-o', dest='outdir', metavar='outdir', type=str, help='output directory (default : "%(default)s")', default='results')
+	parser.add_argument('-n', dest='nmax', metavar='N', type=int, help='consider up to n-grams (default : %(default)i)', default=3)
+	parser.add_argument('-k', dest='ignore', metavar='ignore_file', type=str, help='file containing strings to ignore (default : none)', default="")
+	parser.add_argument('-i', dest='nocase', action='store_true', help='ignore case')
+	
+	args = parser.parse_args()
+
+	nmax = args.nmax
+	outdir = args.outdir
+	infiles = args.inputfiles
+	ignfilename = args.ignore
+	nocase = args.nocase
+	ngramsfiles = []
+
+	dt = 10000
+	ignore = []
+
+
+	for i in range(nmax):
+		ngramsfiles.append( str(i+1) + "grams" )
+
+
+# READ IGNORE FILE
+
+	if len(ignfilename) > 0:
+		ignorefile = codecs.open(ignfilename, mode='r', encoding="utf-8")
+		for line in ignorefile:
+
+			ignore.append(line.rstrip())
+
+
+# CREATE PATTERN FOR REMOVING SPECIAL CHARACTERS
+
+	global badchars
+	remove_badchars = '|'.join(map(re.escape, badchars))
+
+
+# CREATE RESULTS DIRECTORY
+
+	mkdir_p(outdir)
+
+
+# READ LOG FILE
+
+	for filename in infiles:
+
+		infile = codecs.open(filename, mode='r', encoding="utf-8")
+
+		phrase = ""
+		ngrams = [{} for i in range(nmax)]
+
+
+		for line in infile:
+
+			zeline = line.split()
+
+			if len(zeline) != 2:
+				continue
+
+
+# WHILE $2<DT ADD TO STRING
+
+			if int(zeline[0]) < dt and int(zeline[0]) != 0:
+				phrase = phrase + zeline[1]
+
+			else:
+
+# REMOVE IGNORED STRINGS
+
+				for badword in ignore:
+					phrase = phrase.replace(badword,'') # BEWARE THAT RESULT WILL DEPEND ON THE ORDER IN THE IGNORE FILE (e.g. if 'auie' and 'auierst' are to be ignored, if they are in this order in the ignore file the 'rst' string will remain)
+
+
+				cleanphrases = re.split(remove_badchars, phrase)
+
+				for newphrase in cleanphrases:
+
+
+# CUT STRING IN DIGRAMS AND TRIGRAMS AND COUNT N-GRAMS
+
+
+
+# TODO : USE "COUNT" PYTHON FUNCTION ?
+
+					for nchar in range(nmax):
+
+						for pos in range(len(newphrase)-nchar):
+							if nocase:
+								ngram = newphrase[pos:pos+nchar+1].lower()
+							else:
+								ngram = newphrase[pos:pos+nchar+1]
+							if ngram in ngrams[nchar]:
+								ngrams[nchar][ngram] = ngrams[nchar][ngram] + 1
+							else:
+								ngrams[nchar][ngram] = 1
+
+
+				phrase = ""
+
+
+ 
+# PRINT COUNTS
+
+	for nchar in range(nmax):
+		outfile = codecs.open(outdir + "/" + ngramsfiles[nchar], mode='w', encoding="utf8")
+		ngrams_sorted = sorted(ngrams[nchar], key=ngrams[nchar].get, reverse=True)
+		for ii in ngrams_sorted:
+			outfile.write(ii + "\t" + str(ngrams[nchar][ii]) + "\n")
+
+
+if __name__ == "__main__":
+	sys.exit(main(sys.argv))
+
+
